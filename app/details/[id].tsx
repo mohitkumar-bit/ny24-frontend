@@ -1,0 +1,568 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, StatusBar, Platform, Alert, Linking } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { authService } from '@/services/auth.service';
+import { jobService, JobPost } from '@/services/job.service';
+import { applicationService } from '@/services/application.service';
+import type { User } from '@/types';
+import { Skeleton } from '@/components/Skeleton';
+
+export default function DetailScreen() {
+  const { id } = useLocalSearchParams();
+  const router = useRouter();
+  const [job, setJob] = React.useState<JobPost | null>(null);
+  const [user, setUser] = React.useState<User | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [applying, setApplying] = React.useState(false);
+
+  React.useEffect(() => {
+    fetchData();
+  }, [id]);
+
+  const fetchData = async () => {
+    try {
+      const [jobData, userData] = await Promise.all([
+        jobService.getJobById(id as string),
+        authService.getProfile()
+      ]);
+      setJob(jobData);
+      setUser(userData);
+    } catch (err) {
+      console.error('Error fetching data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApply = async () => {
+    if (!user) {
+      router.push('/auth/login' as any);
+      return;
+    }
+
+    if (!user.isWorker) {
+      alert('You need a worker profile to apply for jobs.');
+      router.push('/worker-register' as any);
+      return;
+    }
+
+    setApplying(true);
+    try {
+      await applicationService.apply(id as string, 'I am interested in this job.');
+      alert('Application submitted successfully!');
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to apply');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    Alert.alert(
+      "Delete Job",
+      "Are you sure you want to delete this job post?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await jobService.deleteJob(id as string);
+              router.replace('/my-ads' as any);
+            } catch (err: any) {
+              alert(err.response?.data?.message || 'Failed to delete job');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleCall = () => {
+    if (job?.author && typeof job.author === 'object' && job.author.phone) {
+      Linking.openURL(`tel:${job.author.phone}`);
+    } else {
+      Alert.alert('Error', 'Phone number not available');
+    }
+  };
+
+  const handleChat = () => {
+    if (job?.author && typeof job.author === 'object') {
+      router.push({
+        pathname: '/chat/[id]' as any,
+        params: {
+          id: job.author._id,
+          name: job.author.name,
+          avatarLetter: job.author.name[0]
+        }
+      });
+    }
+  };
+
+  const isAuthor = !loading && user && job && user.id === job.author?._id;
+
+  // Parse gradient if it comes as a string (from params)
+  const gradient = ['#FF9500', '#FFD200'];
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* Header Image/Gradient Section */}
+        <View style={styles.headerContainer}>
+          <LinearGradient
+            colors={gradient as any}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.gradient}
+          >
+            <Ionicons
+              name={job?.categories && job.categories.length > 0 ? job.categories[0].icon : 'briefcase-outline'}
+              size={120}
+              color="rgba(255,255,255,0.4)"
+            />
+          </LinearGradient>
+
+          {/* Floating Action Buttons */}
+          <SafeAreaView style={styles.headerOverlay}>
+            <TouchableOpacity
+              style={styles.circleBtn}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="arrow-back" size={24} color="#000" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.circleBtn}>
+              <Ionicons name="bookmark-outline" size={24} color="#000" />
+            </TouchableOpacity>
+          </SafeAreaView>
+        </View>
+
+        {/* Content Section */}
+        <View style={styles.content}>
+          {loading ? <Skeleton width={120} height={24} borderRadius={10} style={{ marginBottom: 15 }} /> : (
+            <View style={styles.categoriesRow}>
+              {job?.categories?.map((cat: any) => (
+                <View key={cat._id} style={styles.categoryBadge}>
+                  <Text style={styles.categoryText}>{cat.name}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {loading ? (
+            <Skeleton width="90%" height={30} borderRadius={5} style={{ marginBottom: 20 }} />
+          ) : (
+            <Text style={styles.title}>{job?.title}</Text>
+          )}
+
+          {loading ? (
+            <Skeleton width="100%" height={80} borderRadius={20} style={{ marginBottom: 20 }} />
+          ) : (
+            <View style={styles.priceContainer}>
+              <View style={styles.priceRow}>
+                <Text style={styles.priceCurrency}>₹</Text>
+                <Text style={styles.priceValue}>{job?.price}</Text>
+                <Text style={styles.priceSuffix}>/service</Text>
+              </View>
+            </View>
+          )}
+
+          <View style={styles.metaSection}>
+            <View style={styles.metaRow}>
+              <Ionicons name="location-outline" size={18} color="#ccc" />
+              <Text style={styles.metaText}>{job?.location?.address || 'Unknown'}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Ionicons name="time-outline" size={18} color="#ccc" />
+              <Text style={styles.metaText}>
+                {job ? new Date(job.createdAt).toLocaleDateString() : ''}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Description Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Description</Text>
+            {loading ? (
+              <View style={{ gap: 8 }}>
+                <Skeleton width="100%" height={14} />
+                <Skeleton width="100%" height={14} />
+                <Skeleton width="60%" height={14} />
+              </View>
+            ) : (
+              <Text style={styles.descriptionText}>
+                {job?.description}
+              </Text>
+            )}
+          </View>
+
+          {/* Seller Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Author</Text>
+            <View style={styles.sellerCard}>
+              <View style={styles.sellerAvatar}>
+                <Text style={styles.avatarText}>
+                  {typeof job?.author === 'object' ? job.author.name[0] : 'U'}
+                </Text>
+              </View>
+              <View style={styles.sellerInfo}>
+                <Text style={styles.sellerName}>
+                  {typeof job?.author === 'object' ? job.author.name : 'Anonymous'}
+                </Text>
+                <Text style={styles.sellerSub}>Author</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Sticky Bottom Actions */}
+      <View style={styles.bottomBar}>
+        {loading ? (
+          <View style={{ flex: 1, flexDirection: 'row', gap: 15 }}>
+            <Skeleton width="45%" height={50} borderRadius={15} />
+            <Skeleton width="45%" height={50} borderRadius={15} />
+          </View>
+        ) : isAuthor ? (
+          <>
+            <TouchableOpacity
+              style={styles.deleteBtn}
+              onPress={handleDelete}
+            >
+              <Ionicons name="trash-outline" size={20} color="#ffffffff" />
+              <Text style={styles.deleteBtnText}>Delete Ad</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.editJobBtn}
+              onPress={() => router.push(`/edit-job/${id}` as any)}
+            >
+              <Ionicons name="create-outline" size={20} color="#fff" />
+              <Text style={styles.editJobBtnText}>Edit Ad</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            {user?.isWorker ? (
+              <>
+                <TouchableOpacity style={styles.callBtn} onPress={handleCall}>
+                  <Ionicons name="call-outline" size={20} color="#FF9500" />
+                  <Text style={styles.callBtnText}>Call</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.chatActionBtn} onPress={handleChat}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
+                  <Text style={styles.chatActionBtnText}>Chat</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={styles.registerBtn}
+                onPress={() => router.push('/worker-register' as any)}
+              >
+                <Ionicons name="person-add-outline" size={20} color="#fff" />
+                <Text style={styles.registerBtnText}>Create Working Profile First</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  scrollContent: {
+    paddingBottom: 100,
+  },
+  headerContainer: {
+    height: 200,
+    width: '100%',
+    position: 'relative',
+  },
+  gradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 40,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    zIndex: 10,
+  },
+  circleBtn: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  content: {
+    padding: 20,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    marginTop: -30,
+  },
+  categoriesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 15,
+  },
+  categoryBadge: {
+    backgroundColor: '#FFF5E6',
+    paddingHorizontal: 15,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  categoryText: {
+    color: '#FF9500',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0F172A',
+    lineHeight: 34,
+    marginBottom: 20,
+  },
+  priceContainer: {
+    backgroundColor: '#FDF2E9',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#FFE0CC',
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  priceCurrency: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FF9500',
+    marginRight: 4,
+  },
+  priceValue: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#FF9500',
+  },
+  priceSuffix: {
+    fontSize: 18,
+    color: '#64748B',
+    marginLeft: 6,
+  },
+  metaSection: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  metaText: {
+    fontSize: 15,
+    color: '#94A3B8',
+    marginLeft: 8,
+    fontWeight: '500',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#eee',
+    marginVertical: 10,
+    marginBottom: 25,
+  },
+  section: {
+    marginBottom: 30,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    marginBottom: 15,
+  },
+  descriptionText: {
+    fontSize: 14,
+    lineHeight: 26,
+    color: '#64748B',
+    fontWeight: '400',
+  },
+  sellerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  sellerAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FFEAD1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  avatarText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FF9500',
+  },
+  sellerInfo: {
+    flex: 1,
+  },
+  sellerName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  sellerSub: {
+    fontSize: 13,
+    color: '#94A3B8',
+  },
+  ratingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  ratingText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  bottomBar: {
+
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingTop: 15,
+    paddingBottom: Platform.OS === 'ios' ? 35 : 20,
+    flexDirection: 'row',
+    gap: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 20,
+  },
+  callBtn: {
+    flex: 1,
+    height: 50,
+    borderRadius: 15,
+    borderWidth: 2,
+    borderColor: '#FFBB70',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  callBtnText: {
+    color: '#FF9500',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  chatActionBtn: {
+    flex: 1,
+    height: 50,
+    borderRadius: 15,
+    backgroundColor: '#00A300',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#00A300',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  chatActionBtnText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  registerBtn: {
+    flex: 1,
+    height: 50,
+    borderRadius: 15,
+    backgroundColor: '#0F172A', // Dark navy/black
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  registerBtnText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  deleteBtn: {
+    flex: 1,
+    height: 50,
+    borderRadius: 15,
+    borderWidth: 2,
+    borderColor: '#bcbcbcff',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fb2e2eff',
+  },
+  deleteBtnText: {
+    color: '#ffffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  editJobBtn: {
+    flex: 1,
+    height: 50,
+    borderRadius: 15,
+    backgroundColor: '#FF9500',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#FF9500',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  editJobBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+});
