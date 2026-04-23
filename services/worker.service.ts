@@ -20,4 +20,9 @@ export const workerService = {
     const response = await api.put('/worker/update-profile', data);
     return response.data;
   },
+  
+  async getWorkerById(id: string) {
+    const response = await api.get(`/worker/${id}`);
+    return response.data;
+  },
 };

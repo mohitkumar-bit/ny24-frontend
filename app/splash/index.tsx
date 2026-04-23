@@ -2,17 +2,29 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, StatusBar, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Logo } from '@/components/Logo';
+import { tokenStorage } from '@/services/tokenStorage';
 
 export default function SplashPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Navigate to Login after 2 seconds
-    const timer = setTimeout(() => {
-      router.replace("/auth/login" as any);
-    }, 2000);
+    const checkAuth = async () => {
+      try {
+        const token = await tokenStorage.getAccessToken();
+        // Wait for splash animation (2s total)
+        setTimeout(() => {
+          if (token) {
+            router.replace("/(tabs)" as any);
+          } else {
+            router.replace("/auth/login" as any);
+          }
+        }, 2000);
+      } catch (error) {
+        setTimeout(() => router.replace("/auth/login" as any), 2000);
+      }
+    };
 
-    return () => clearTimeout(timer);
+    checkAuth();
   }, [router]);
 
   return (

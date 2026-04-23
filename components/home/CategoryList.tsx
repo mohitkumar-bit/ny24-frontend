@@ -3,6 +3,7 @@ import { ScrollView, Text, StyleSheet, TouchableOpacity, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 
 import { categoryService, Category } from '@/services/category.service';
+import { Skeleton } from '@/components/Skeleton';
 
 interface CategoryListProps {
   onSelectCategory: (id: string) => void;
@@ -11,6 +12,7 @@ interface CategoryListProps {
 
 export const CategoryList = ({ onSelectCategory, activeCategoryId }: CategoryListProps) => {
   const [categories, setCategories] = React.useState<Category[]>([]);
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
     fetchCategories();
@@ -22,6 +24,8 @@ export const CategoryList = ({ onSelectCategory, activeCategoryId }: CategoryLis
       setCategories([{ _id: 'all', name: 'All', icon: 'grid-outline' }, ...data]);
     } catch (error) {
       console.error('Error fetching categories for list:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -31,7 +35,11 @@ export const CategoryList = ({ onSelectCategory, activeCategoryId }: CategoryLis
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.container}
     >
-      {categories.map((item) => (
+      {loading ? (
+        [1, 2, 3, 4, 5].map((_, i) => (
+          <Skeleton key={i} width={100} height={40} borderRadius={20} />
+        ))
+      ) : categories.map((item) => (
         <TouchableOpacity
           key={item._id}
           style={[

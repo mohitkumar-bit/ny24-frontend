@@ -9,7 +9,9 @@ import {
   TextInput,
   Platform,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Switch,
+  Modal
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,12 +33,21 @@ export default function WorkerRegisterScreen() {
   const [hourlyRate, setHourlyRate] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
+  const [age, setAge] = useState('');
+  const [gender, setGender] = useState<'Male' | 'Female' | 'Other' | ''>('');
+  const [interestedInLongDistance, setInterestedInLongDistance] = useState(false);
+  const [showGenderModal, setShowGenderModal] = useState(false);
 
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([fetchCategories(), checkExistingProfile()]);
-      setLoading(false);
+      try {
+        await Promise.all([fetchCategories(), checkExistingProfile()]);
+      } catch (err) {
+        console.error('Initialization error:', err);
+      } finally {
+        setLoading(false);
+      }
     };
     init();
   }, []);
@@ -56,6 +67,9 @@ export default function WorkerRegisterScreen() {
         setHourlyRate(String(profile.hourlyRate || '0'));
         setAddress(profile.location?.address || '');
         setCity(profile.location?.city || '');
+        setAge(String(profile.age || ''));
+        setGender(profile.gender || '');
+        setInterestedInLongDistance(profile.interestedInLongDistance || false);
       }
     } catch (err) {
       console.error('Error checking existing worker profile:', err);
@@ -80,8 +94,10 @@ export default function WorkerRegisterScreen() {
   };
 
   const handleSubmit = async () => {
+    console.log('SUBMITTING PROFILE...', { title, hourlyRate, selectedSkills: selectedSkills.length });
+    
     if (!title || !hourlyRate || selectedSkills.length === 0) {
-      Alert.alert('Error', 'Please fill in all required fields');
+      Alert.alert('Error', 'Please fill in all required fields (Title, Skills, and Hourly Rate)');
       return;
     }
 
@@ -92,10 +108,14 @@ export default function WorkerRegisterScreen() {
       experience: Number(experience),
       hourlyRate: Number(hourlyRate),
       location: {
+        type: 'Point',
         address,
         city,
         coordinates: [0, 0]
-      }
+      },
+      age: age ? Number(age) : undefined,
+      gender: gender || undefined,
+      interestedInLongDistance
     };
 
     setLoading(true);
@@ -201,6 +221,83 @@ export default function WorkerRegisterScreen() {
           onChangeText={setCity}
         />
 
+        <Text style={styles.sectionTitle}>Personal Details</Text>
+        <View style={styles.row}>
+          <View style={{ flex: 0.35, marginRight: 15 }}>
+            <Text style={styles.label}>Age</Text>
+            <TextInput
+              placeholder="e.g. 25"
+              value={age}
+              style={styles.input}
+              onChangeText={setAge}
+              keyboardType="numeric"
+            />
+          </View>
+          <View style={{ flex: 0.65 }}>
+            <Text style={styles.label}>Gender</Text>
+            <TouchableOpacity 
+              style={styles.dropdownTrigger}
+              onPress={() => setShowGenderModal(true)}
+            >
+              <Text style={[
+                styles.dropdownText,
+                !gender && { color: '#999' }
+              ]}>
+                {gender || 'Select'}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color="#666" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Modal
+          visible={showGenderModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowGenderModal(false)}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowGenderModal(false)}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Select Gender</Text>
+              {['Male', 'Female', 'Other'].map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={styles.optionBtn}
+                  onPress={() => {
+                    setGender(option as any);
+                    setShowGenderModal(false);
+                  }}
+                >
+                  <Text style={[
+                    styles.optionText,
+                    gender === option && styles.optionTextSelected
+                  ]}>{option}</Text>
+                  {gender === option && (
+                    <Ionicons name="checkmark" size={20} color="#00A300" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        <View style={styles.toggleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>Interested in Long Distance Work?</Text>
+            <Text style={styles.toggleSubLabel}>Check this if you can travel far for jobs</Text>
+          </View>
+          <Switch
+            value={interestedInLongDistance}
+            onValueChange={setInterestedInLongDistance}
+            trackColor={{ false: '#767577', true: '#00A300' }}
+            thumbColor={interestedInLongDistance ? '#fff' : '#f4f3f4'}
+          />
+        </View>
+
         <TouchableOpacity
           style={styles.submitBtn}
           onPress={handleSubmit}
@@ -257,6 +354,14 @@ const styles = StyleSheet.create({
   inputGroup: {
     marginBottom: 15,
   },
+  input: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 15,
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
   textArea: {
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
@@ -312,5 +417,80 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  genderContainer: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  dropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB',
+    height: 50,
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    color: '#333',
+    textAlign: 'center',
+  },
+  optionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  optionTextSelected: {
+    color: '#00A300',
+    fontWeight: 'bold',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    backgroundColor: '#F9FAFB',
+    padding: 15,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  toggleLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+  },
+  toggleSubLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
   },
 });

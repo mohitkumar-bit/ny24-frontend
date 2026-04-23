@@ -9,7 +9,8 @@ import {
   ScrollView,
   TextInput,
   Platform,
-  SafeAreaView
+  SafeAreaView,
+  Switch
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,14 +19,38 @@ import { categoryService, Category } from '@/services/category.service';
 interface FilterModalProps {
   isVisible: boolean;
   onClose: () => void;
-  onApply: (filters: { category?: string; city?: string }) => void;
-  initialFilters?: { category?: string; city?: string };
+  onApply: (filters: { 
+    category?: string; 
+    city?: string;
+    minPrice?: string;
+    maxPrice?: string;
+    gender?: string;
+    interestedInLongDistance?: boolean;
+    minAge?: string;
+    maxAge?: string;
+  }) => void;
+  initialFilters?: { 
+    category?: string; 
+    city?: string;
+    minPrice?: string;
+    maxPrice?: string;
+    gender?: string;
+    interestedInLongDistance?: boolean;
+    minAge?: string;
+    maxAge?: string;
+  };
 }
 
 export const FilterModal = ({ isVisible, onClose, onApply, initialFilters }: FilterModalProps) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>(initialFilters?.category || '');
   const [city, setCity] = useState(initialFilters?.city || '');
+  const [minPrice, setMinPrice] = useState(initialFilters?.minPrice || '');
+  const [maxPrice, setMaxPrice] = useState(initialFilters?.maxPrice || '');
+  const [gender, setGender] = useState(initialFilters?.gender || '');
+  const [longDistance, setLongDistance] = useState(initialFilters?.interestedInLongDistance || false);
+  const [minAge, setMinAge] = useState(initialFilters?.minAge || '');
+  const [maxAge, setMaxAge] = useState(initialFilters?.maxAge || '');
 
   useEffect(() => {
     fetchCategories();
@@ -44,6 +69,12 @@ export const FilterModal = ({ isVisible, onClose, onApply, initialFilters }: Fil
     onApply({
       category: selectedCategory,
       city: city.trim(),
+      minPrice,
+      maxPrice,
+      gender,
+      interestedInLongDistance: longDistance,
+      minAge,
+      maxAge
     });
     onClose();
   };
@@ -51,6 +82,12 @@ export const FilterModal = ({ isVisible, onClose, onApply, initialFilters }: Fil
   const handleClear = () => {
     setSelectedCategory('');
     setCity('');
+    setMinPrice('');
+    setMaxPrice('');
+    setGender('');
+    setLongDistance(false);
+    setMinAge('');
+    setMaxAge('');
     onApply({});
     onClose();
   };
@@ -112,6 +149,86 @@ export const FilterModal = ({ isVisible, onClose, onApply, initialFilters }: Fil
                       </Text>
                     </TouchableOpacity>
                   ))}
+                </View>
+
+                {/* Price Filter */}
+                <Text style={styles.sectionTitle}>Hourly Rate (₹)</Text>
+                <View style={styles.row}>
+                  <View style={styles.flex1}>
+                    <TextInput
+                      placeholder="Min"
+                      style={styles.smallInput}
+                      value={minPrice}
+                      onChangeText={setMinPrice}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  <View style={styles.flex1}>
+                    <TextInput
+                      placeholder="Max"
+                      style={styles.smallInput}
+                      value={maxPrice}
+                      onChangeText={setMaxPrice}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                {/* Age Filter */}
+                <Text style={styles.sectionTitle}>Age Range</Text>
+                <View style={styles.row}>
+                  <View style={styles.flex1}>
+                    <TextInput
+                      placeholder="Min Age"
+                      style={styles.smallInput}
+                      value={minAge}
+                      onChangeText={setMinAge}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  <View style={styles.flex1}>
+                    <TextInput
+                      placeholder="Max Age"
+                      style={styles.smallInput}
+                      value={maxAge}
+                      onChangeText={setMaxAge}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                {/* Gender Filter */}
+                <Text style={styles.sectionTitle}>Gender</Text>
+                <View style={styles.categoriesContainer}>
+                  {['Male', 'Female'].map((g) => (
+                    <TouchableOpacity
+                      key={g}
+                      style={[
+                        styles.categoryChip,
+                        gender === g && styles.activeChip
+                      ]}
+                      onPress={() => setGender(gender === g ? '' : g)}
+                    >
+                      <Text style={[
+                        styles.categoryText,
+                        gender === g && styles.activeCategoryText
+                      ]}>{g}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Long Distance Filter */}
+                <View style={styles.switchRow}>
+                  <View style={styles.flex1}>
+                    <Text style={styles.switchLabel}>Long Distance Work</Text>
+                    <Text style={styles.switchSubLabel}>Show workers willing to travel</Text>
+                  </View>
+                  <Switch
+                    value={longDistance}
+                    onValueChange={setLongDistance}
+                    trackColor={{ false: '#767577', true: '#FF9500' }}
+                    thumbColor={longDistance ? '#fff' : '#f4f3f4'}
+                  />
                 </View>
 
                 <View style={{ height: 40 }} />
@@ -263,5 +380,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#fff',
     fontWeight: 'bold',
+  },
+  row: {
+    flexDirection: 'row',
+    gap: 15,
+    marginBottom: 10,
+  },
+  flex1: {
+    flex: 1,
+  },
+  smallInput: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 15,
+    paddingHorizontal: 15,
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    fontSize: 15,
+    color: '#333',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 25,
+    backgroundColor: '#F8FAFC',
+    padding: 15,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  switchLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  switchSubLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
   },
 });

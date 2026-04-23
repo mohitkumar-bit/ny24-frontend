@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { tokenStorage } from './tokenStorage';
 
-export const BASE_URL = 'https://news24-backend.onrender.com/api'; // Use your local IP for physical device testing
+export const BASE_URL = 'http://localhost:4000/api'; // Use your local IP for physical device testing
 
 export const api = axios.create({
   baseURL: BASE_URL,

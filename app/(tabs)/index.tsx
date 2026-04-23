@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { View, StyleSheet, FlatList, TextInput, TouchableOpacity, Text, SafeAreaView, StatusBar, Animated } from 'react-native';
+import { View, StyleSheet, FlatList, TextInput, TouchableOpacity, Text, SafeAreaView, StatusBar, Animated, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -18,7 +18,7 @@ const mapBackendToPost = (job: JobPost): Post => ({
     : 'General',
   price: `₹${job.price}`,
   location: job.location?.address || 'Unknown',
-  author: typeof job.author === 'object' ? job.author.name : 'Anonymous',
+  author: job.author && typeof job.author === 'object' ? job.author.name : 'Anonymous',
   time: new Date(job.createdAt).toLocaleDateString(),
   gradient: ['#FF9500', '#FFD200'],
   icon: job.categories && job.categories.length > 0
@@ -61,7 +61,8 @@ export default function HomeScreen() {
   const [posts, setPosts] = React.useState<Post[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [isFilterVisible, setIsFilterVisible] = React.useState(false);
-  const [activeFilters, setActiveFilters] = React.useState<{ category?: string; city?: string }>({});
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [activeFilters, setActiveFilters] = React.useState<any>({});
 
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -83,11 +84,14 @@ export default function HomeScreen() {
     fetchJobs();
   }, []);
 
-  const fetchJobs = async (filters: any = activeFilters) => {
+  const fetchJobs = async (filters: any = activeFilters, query: string = searchQuery) => {
     setLoading(true);
     try {
+      const params = { ...filters };
+      if (query) params.search = query;
+
       const [jobs, savedJobs] = await Promise.all([
-        jobService.getJobs(filters),
+        jobService.getJobs(params),
         saveService.getSavedJobs().catch(() => [])
       ]);
 
@@ -106,7 +110,12 @@ export default function HomeScreen() {
 
   const handleApplyFilters = (filters: any) => {
     setActiveFilters(filters);
-    fetchJobs(filters);
+    fetchJobs(filters, searchQuery);
+  };
+
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    fetchJobs(activeFilters, query);
   };
   const renderHeader = () => (
     <View style={styles.listHeader}>
@@ -154,7 +163,15 @@ export default function HomeScreen() {
                 placeholder="Search posts, jobs, service..."
                 placeholderTextColor="#999"
                 style={styles.searchInput}
+                value={searchQuery}
+                onChangeText={handleSearch}
+                onSubmitEditing={() => fetchJobs(activeFilters, searchQuery)}
               />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => handleSearch('')}>
+                  <Ionicons name="close-circle" size={20} color="#ccc" />
+                </TouchableOpacity>
+              )}
             </View>
             <TouchableOpacity
               style={styles.filterBtn}
@@ -180,8 +197,14 @@ export default function HomeScreen() {
             { useNativeDriver: true }
           )}
           scrollEventThrottle={16}
-          refreshing={loading}
-          onRefresh={fetchJobs}
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={fetchJobs}
+              tintColor="#FF9500"
+              colors={["#FF9500"]}
+            />
+          }
           ListHeaderComponent={() => (
             <View>
               <View style={{ height: HEADER_HEIGHT + 20 }} />

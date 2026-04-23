@@ -45,8 +45,10 @@ export default function RootLayout() {
           <Stack.Screen name="auth/signup" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="details/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="worker-details/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
           <Stack.Screen name='worker-register' options={{ headerShown: false }} />
+          <Stack.Screen name='worker-profile' options={{ headerShown: false }} />
           <Stack.Screen name="create-post" options={{ headerShown: false }} />
           <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
           <Stack.Screen name="subscription" options={{ headerShown: false }} />

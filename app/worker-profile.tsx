@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, StatusBar, Switch, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,6 +23,25 @@ export default function WorkerProfileScreen() {
       console.error('Error fetching worker profile:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleAvailability = async (value: boolean) => {
+    try {
+      // Optimistic update
+      const oldProfile = { ...profile };
+      setProfile({ ...profile, availability: value });
+
+      const response = await workerService.updateProfile({ availability: value });
+      if (response.success) {
+        setProfile((prev: any) => ({ ...prev, ...response.profile }));
+      } else {
+        setProfile(oldProfile);
+        Alert.alert('Error', 'Failed to update availability');
+      }
+    } catch (error) {
+      console.error('Error updating availability:', error);
+      Alert.alert('Error', 'Failed to update availability');
     }
   };
 
@@ -102,8 +121,14 @@ export default function WorkerProfileScreen() {
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statBox}>
-                <Ionicons name="checkmark-done" size={20} color="#00A300" />
-                <Text style={styles.statLab}>Available</Text>
+                <Switch
+                  value={profile?.availability !== false}
+                  onValueChange={toggleAvailability}
+                  trackColor={{ false: '#767577', true: '#FF9500' }}
+                  thumbColor={profile?.availability !== false ? '#fff' : '#f4f3f4'}
+                  ios_backgroundColor="#3e3e3e"
+                />
+                <Text style={styles.statLab}>{profile?.availability !== false ? 'Available' : 'Busy'}</Text>
               </View>
             </View>
           </View>
@@ -137,6 +162,40 @@ export default function WorkerProfileScreen() {
               <View style={styles.locationInfo}>
                 <Text style={styles.addressText}>{profile?.location?.address}</Text>
                 <Text style={styles.cityText}>{profile?.location?.city}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Personal Info Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionHeader}>Personal Information</Text>
+            <View style={styles.infoGrid}>
+              <View style={styles.infoBox}>
+                <Ionicons name="calendar-outline" size={20} color="#FF9500" />
+                <View>
+                  <Text style={styles.infoLabel}>Age</Text>
+                  <Text style={styles.infoValue}>{profile?.age || 'N/A'}</Text>
+                </View>
+              </View>
+              <View style={styles.infoBox}>
+                <Ionicons name="person-outline" size={20} color="#FF9500" />
+                <View>
+                  <Text style={styles.infoLabel}>Gender</Text>
+                  <Text style={styles.infoValue}>{profile?.gender || 'N/A'}</Text>
+                </View>
+              </View>
+              <View style={[styles.infoBox, { width: '100%', marginTop: 10 }]}>
+                <Ionicons 
+                  name={profile?.interestedInLongDistance ? "airplane-outline" : "home-outline"} 
+                  size={20} 
+                  color="#FF9500" 
+                />
+                <View>
+                  <Text style={styles.infoLabel}>Service Area</Text>
+                  <Text style={styles.infoValue}>
+                    {profile?.interestedInLongDistance ? 'Interested in Long Distance' : 'Local Area Only'}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
@@ -345,5 +404,30 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F8F9FA',
+    padding: 12,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#F1F1F1',
+    width: '48%',
+  },
+  infoLabel: {
+    fontSize: 11,
+    color: '#999',
+  },
+  infoValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
   },
 });
