@@ -59,6 +59,7 @@ export default function RootLayout() {
           <Stack.Screen name="terms" options={{ headerShown: false }} />
           <Stack.Screen name="privacy" options={{ headerShown: false }} />
           <Stack.Screen name="support" options={{ headerShown: false }} />
+          <Stack.Screen name="payment" options={{ headerShown: false }} />
 
         </Stack>
         <StatusBar style="auto" />

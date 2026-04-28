@@ -12,6 +12,10 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { subscribeToPlan, getSubscriptionStatus } from '../services/subscription.service';
+import { Alert, ActivityIndicator } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 
 interface Plan {
   id: 'free' | 'pro' | 'business';
@@ -74,8 +78,50 @@ const PLANS: Plan[] = [
 export default function SubscriptionScreen() {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<'free' | 'pro' | 'business'>('pro');
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentSubscription, setCurrentSubscription] = useState<any>(null);
+
+  React.useEffect(() => {
+    fetchStatus();
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchStatus();
+    }, [])
+  );
+
+  const fetchStatus = async () => {
+    try {
+      const { subscription } = await getSubscriptionStatus();
+      setCurrentSubscription(subscription);
+      if (subscription) {
+        setSelectedPlan(subscription.plan);
+      }
+    } catch (error) {
+      console.log('Error fetching status:', error);
+    }
+  };
 
   const activePlan = PLANS.find(p => p.id === selectedPlan)!;
+  const currentPlanId = currentSubscription?.plan || 'free';
+  const isCurrentPlan = selectedPlan === currentPlanId;
+
+  const handleSubscribe = async () => {
+    if (selectedPlan === 'free') {
+      router.back();
+      return;
+    }
+
+    const amount = selectedPlan === 'pro' ? 299 : 799;
+    router.push({
+      pathname: '/payment',
+      params: {
+        plan: selectedPlan,
+        amount: amount
+      }
+    });
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -112,7 +158,10 @@ export default function SubscriptionScreen() {
 
         {/* Pricing Cards */}
         <View style={styles.plansContainer}>
-          {PLANS.map((plan) => {
+          {PLANS.filter(p => {
+            const levels: Record<string, number> = { free: 0, pro: 1, business: 2 };
+            return levels[p.id] >= levels[currentPlanId as string];
+          }).map((plan) => {
             const isSelected = selectedPlan === plan.id;
             return (
               <TouchableOpacity
@@ -123,16 +172,29 @@ export default function SubscriptionScreen() {
                 ]}
                 onPress={() => setSelectedPlan(plan.id)}
                 activeOpacity={0.9}
+                disabled={isLoading}
               >
-                {plan.isPopular && (
-                  <View style={styles.popularBadge}>
+                {/* {plan.isPopular && plan.id !== currentPlanId && (
+                  <View style={styles.popularBadgeInline}>
                     <Text style={styles.popularBadgeText}>POPULAR</Text>
                   </View>
-                )}
+                )} */}
 
                 <View style={styles.cardHeader}>
                   <View>
-                    <Text style={[styles.planName, isSelected && { color: plan.color }]}>{plan.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={[styles.planName, isSelected && { color: plan.color }]}>{plan.name}</Text>
+                      {plan.id === currentPlanId && (
+                        <View style={styles.currentPlanBadge}>
+                          <Text style={styles.currentPlanBadgeText}>CURRENT</Text>
+                        </View>
+                      )}
+                      {/* {plan.isPopular && plan.id === currentPlanId && (
+                        <View style={styles.popularBadgeInline}>
+                          <Text style={styles.popularBadgeText}>POPULAR</Text>
+                        </View>
+                      )} */}
+                    </View>
                     <Text style={[styles.planPrice, isSelected && { color: plan.color }]}>
                       {plan.priceLabel}
                     </Text>
@@ -162,10 +224,27 @@ export default function SubscriptionScreen() {
 
       {/* Bottom Sticky Action */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.subscribeBtn} activeOpacity={0.8}>
-          <Text style={styles.subscribeBtnText}>
-            {selectedPlan === 'free' ? 'Continue with Free' : `Subscribe to ${activePlan.name} - ${activePlan.price}/mo`}
-          </Text>
+        <TouchableOpacity
+          style={[
+            styles.subscribeBtn,
+            (isLoading || isCurrentPlan) && { opacity: 0.7, backgroundColor: isCurrentPlan ? '#64748B' : '#00A300' }
+          ]}
+          activeOpacity={0.8}
+          onPress={handleSubscribe}
+          disabled={isLoading || isCurrentPlan}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.subscribeBtnText}>
+              {isCurrentPlan
+                ? 'Current Plan'
+                : (currentPlanId === 'free'
+                  ? (selectedPlan === 'free' ? 'Continue with Free' : `Subscribe to ${activePlan.name}`)
+                  : `Upgrade to ${activePlan.name}`)
+              }
+            </Text>
+          )}
         </TouchableOpacity>
         <Text style={styles.footerDisclaimer}>Cancel anytime • No real payment in demo</Text>
       </View>
@@ -249,20 +328,30 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-  popularBadge: {
-    position: 'absolute',
-    top: 24,
-    left: 70,
+  popularBadgeInline: {
     backgroundColor: '#FF9500',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   popularBadgeText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  currentPlanBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  currentPlanBadgeText: {
+    color: '#64748B',
+    fontSize: 10,
+    fontWeight: '700',
   },
   cardHeader: {
     flexDirection: 'row',

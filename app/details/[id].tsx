@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, StatusBar, Platform, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, StatusBar, Platform, Alert, Linking, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { authService } from '@/services/auth.service';
 import { jobService, JobPost } from '@/services/job.service';
 import { applicationService } from '@/services/application.service';
+import { checkChatLimit } from '@/services/chat.service';
 import type { User } from '@/types';
 import { Skeleton } from '@/components/Skeleton';
+import { LimitModal } from '@/components/LimitModal';
 
 export default function DetailScreen() {
   const { id } = useLocalSearchParams();
@@ -89,16 +91,47 @@ export default function DetailScreen() {
     }
   };
 
-  const handleChat = () => {
+  const [isCheckingLimit, setIsCheckingLimit] = React.useState(false);
+  const [showLimitModal, setShowLimitModal] = React.useState(false);
+  const [modalMessage, setModalMessage] = React.useState('');
+  const [modalPlan, setModalPlan] = React.useState('Free');
+
+  const handleChat = async () => {
     if (job?.author && typeof job.author === 'object') {
-      router.push({
-        pathname: '/chat/[id]' as any,
-        params: {
-          id: job.author._id,
-          name: job.author.name,
-          avatarLetter: job.author.name[0]
-        }
-      });
+      setIsCheckingLimit(true);
+      try {
+        console.log('Checking chat limit for post author:', job.author._id);
+        await checkChatLimit(job.author._id);
+
+        router.push({
+          pathname: '/chat/[id]' as any,
+          params: {
+            id: job.author._id,
+            name: job.author.name,
+            avatarLetter: job.author.name[0]
+          }
+        });
+      } catch (error: any) {
+        console.log('Chat limit error caught for post author:', error);
+        processLimitError(error);
+      } finally {
+        setIsCheckingLimit(false);
+      }
+    }
+  };
+
+  const processLimitError = (error: any) => {
+    console.log('Processing limit error:', error);
+    const isLimitReached = (error.code === 'CHAT_LIMIT_REACHED') || 
+                           (error.message?.toLowerCase().includes('limit reached')) ||
+                           (error.toString().toLowerCase().includes('limit reached'));
+
+    if (isLimitReached) {
+      setModalMessage(error.message || '');
+      setModalPlan('Free');
+      setShowLimitModal(true);
+    } else {
+      alert(error.message || error.toString());
     }
   };
 
@@ -110,6 +143,16 @@ export default function DetailScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
+      <LimitModal 
+        visible={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        onUpgrade={() => {
+          setShowLimitModal(false);
+          router.push('/subscription');
+        }}
+        message={modalMessage}
+        plan={modalPlan}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Header Image/Gradient Section */}
@@ -257,9 +300,19 @@ export default function DetailScreen() {
                   <Text style={styles.callBtnText}>Call</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.chatActionBtn} onPress={handleChat}>
-                  <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
-                  <Text style={styles.chatActionBtnText}>Chat</Text>
+                <TouchableOpacity 
+                  style={styles.chatActionBtn} 
+                  onPress={handleChat}
+                  disabled={isCheckingLimit}
+                >
+                  {isCheckingLimit ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
+                      <Text style={styles.chatActionBtnText}>Chat</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </>
             ) : (

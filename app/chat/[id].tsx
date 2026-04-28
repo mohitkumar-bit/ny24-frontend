@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,58 +10,168 @@ import {
   Platform,
   SafeAreaView,
   StatusBar,
-  Image
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { getMessages, sendMessage } from '../../services/chat.service';
+import { authService } from '../../services/auth.service';
 
 interface Message {
-  id: string;
+  _id: string;
   text: string;
-  sender: 'other' | 'me';
-  time: string;
-  status?: 'sent' | 'delivered' | 'read';
+  sender: string;
+  createdAt: string;
 }
 
-const MOCK_MESSAGES: Message[] = [
-  { id: '1', text: 'Hello! I saw your post and I am interested.', sender: 'other', time: '15:48', status: 'read' },
-  { id: '2', text: 'Hi! Thanks for reaching out. How can I help you?', sender: 'me', time: '15:50' },
-  { id: '3', text: 'I need the work done by this weekend. Is that possible?', sender: 'other', time: '15:53', status: 'read' },
-  { id: '4', text: 'Yes, I am available on Saturday. Shall we confirm a time?', sender: 'me', time: '15:56' },
-  { id: '5', text: 'Saturday 10 AM works for me. What is your rate?', sender: 'other', time: '16:08' },
-];
-
 export default function ChatDetailScreen() {
-  const { id, name, avatarLetter } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const { id, name, avatarLetter, receiverId: paramReceiverId } = params;
   const router = useRouter();
+
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [receiverId, setReceiverId] = useState<string | null>(null);
+  const flatListRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    if (id && id !== 'new') {
+      setActiveConversationId(id as string);
+    }
+    if (paramReceiverId) {
+      setReceiverId(paramReceiverId as string);
+    }
+  }, [id, paramReceiverId]);
+
+  useEffect(() => {
+    loadUserId();
+    const interval = setInterval(fetchMsgs, 5000);
+    return () => clearInterval(interval);
+  }, [activeConversationId]);
+
+  const loadUserId = async () => {
+    try {
+      const user = await authService.getProfile();
+      if (user) {
+        // Handle both _id and id (just in case)
+        const userId = user._id || user.id;
+        setCurrentUserId(userId);
+      }
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
+
+  const fetchMsgs = async () => {
+    // We can fetch if we have an active conversation OR a receiver to check against
+    const fetchId = activeConversationId || (id === 'new' ? receiverId : id);
+    
+    if (!fetchId) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const data = await getMessages(fetchId as string);
+      setMessages(data);
+      
+      // Fallback: If receiverId is not in URL, find it from messages
+      if (!receiverId && data.length > 0 && currentUserId) {
+        const firstMsg = data[0];
+        const otherId = firstMsg.sender === currentUserId ? firstMsg.receiver : firstMsg.sender;
+        if (otherId) {
+          setReceiverId(otherId);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSend = async () => {
+    if (!inputText.trim()) return;
+
+    // Use either receiverId or activeConversationId
+    if (!receiverId && !activeConversationId) {
+      return;
+    }
+
+    try {
+      setIsSending(true);
+      const textToSend = inputText.trim();
+      setInputText('');
+
+      const response = await sendMessage(
+        receiverId as string || undefined,
+        textToSend,
+        activeConversationId || undefined
+      );
+
+      // Update conversation ID for subsequent polls if it was a 'new' chat
+      if (response.conversationId) {
+        setActiveConversationId(response.conversationId);
+      } else if (response.message?.conversationId) {
+        setActiveConversationId(response.message.conversationId);
+      }
+
+      fetchMsgs(); // Refresh list
+    } catch (error: any) {
+      console.error('Send error:', error);
+      
+      // Extract specific error code/message from server response
+      const serverError = error.response?.data;
+      const errorCode = serverError?.code;
+      const serverMsg = serverError?.message;
+      const genericMsg = error.toString();
+      
+      if (error.response?.status === 401 || genericMsg.toLowerCase().includes('token')) {
+        Alert.alert('Session Expired', 'Please login again to continue chatting.', [
+          { text: 'OK', onPress: () => router.replace('/(auth)/login' as any) }
+        ]);
+      } else if (errorCode === 'CHAT_LIMIT_REACHED' || serverMsg?.toLowerCase().includes('limit reached')) {
+        Alert.alert(
+          'Chat Limit Reached',
+          serverMsg || 'You have reached your daily limit of unique chats. Upgrade your plan for more limits or delete a recent chat to continue.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Upgrade Plan', onPress: () => router.push('/subscription' as any) }
+          ]
+        );
+      } else {
+        Alert.alert('Message Failed', serverMsg || genericMsg);
+      }
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const renderMessage = ({ item }: { item: Message }) => {
-    const isOther = item.sender === 'other';
+    // Robust comparison of IDs (handling both object and string representations)
+    const isMe = String(item.sender) === String(currentUserId);
+
+    const date = new Date(item.createdAt);
+    const timeText = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     return (
-      <View style={styles.messageWrapper}>
+      <View style={[styles.messageWrapper, isMe ? styles.meWrapper : styles.otherWrapper]}>
         <View style={styles.messageRow}>
-          {!isOther && (
-            <View style={styles.miniAvatar}>
-              <Text style={styles.miniAvatarText}>s</Text>
-            </View>
-          )}
-          <View style={[styles.bubble, isOther ? styles.otherBubble : styles.meBubble]}>
-            <Text style={styles.messageText}>{item.text}</Text>
+          <View style={[styles.bubble, isMe ? styles.meBubble : styles.otherBubble]}>
+            <Text style={[styles.messageText, isMe ? styles.meMessageText : styles.otherMessageText]}>
+              {item.text}
+            </Text>
             <View style={styles.messageFooter}>
-              <Text style={styles.timeText}>{item.time}</Text>
-              {isOther && (
-                <Ionicons
-                  name="checkmark-done"
-                  size={16}
-                  color="#34B7F1"
-                  style={styles.statusIcon}
-                />
-              )}
+              <Text style={[styles.timeText, isMe ? styles.meTimeText : styles.otherTimeText]}>
+                {timeText}
+              </Text>
             </View>
           </View>
-          {/* Reply Arrow Placeholder */}
-          <Ionicons name="arrow-undo-outline" size={16} color="#BDBDBD" style={styles.replyIcon} />
         </View>
       </View>
     );
@@ -104,20 +214,29 @@ export default function ChatDetailScreen() {
         style={styles.chatArea}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        <FlatList
-          data={MOCK_MESSAGES}
-          keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
-          contentContainerStyle={styles.listContent}
-          ListHeaderComponent={() => (
-            <View style={styles.dateContainer}>
-              <View style={styles.dateBadge}>
-                <Text style={styles.dateText}>Today</Text>
+        {isLoading ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color="#FF9500" />
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            extraData={currentUserId}
+            keyExtractor={(item) => item._id}
+            renderItem={renderMessage}
+            contentContainerStyle={styles.listContent}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            ListEmptyComponent={() => (
+              <View style={styles.dateContainer}>
+                <View style={styles.dateBadge}>
+                  <Text style={styles.dateText}>No conversation yet</Text>
+                </View>
               </View>
-            </View>
-          )}
-          showsVerticalScrollIndicator={false}
-        />
+            )}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
 
         {/* Bottom Input Area */}
         <View style={styles.inputWrapper}>
@@ -129,13 +248,22 @@ export default function ChatDetailScreen() {
                 placeholderTextColor="#666"
                 value={inputText}
                 onChangeText={setInputText}
+                onSubmitEditing={handleSend}
               />
-              <TouchableOpacity style={styles.iconBtn}>
-                <Ionicons name="happy-outline" size={24} color="#666" />
-              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.sendBtn}>
-              <Ionicons name="send" size={20} color="#fff" />
+            <TouchableOpacity
+              style={[
+                styles.sendBtn,
+                (isSending || !inputText.trim()) ? styles.sendBtnDisabled : styles.sendBtnActive
+              ]}
+              onPress={handleSend}
+              disabled={isSending || !inputText.trim()}
+            >
+              {isSending ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Ionicons name="send" size={20} color="#fff" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -222,6 +350,7 @@ const styles = StyleSheet.create({
   },
   chatArea: {
     flex: 1,
+    paddingTop: 10,
   },
   listContent: {
     paddingHorizontal: 20,
@@ -244,53 +373,45 @@ const styles = StyleSheet.create({
   },
   messageWrapper: {
     marginBottom: 10,
+    width: '100%',
+  },
+  meWrapper: {
+    alignItems: 'flex-end',
+  },
+  otherWrapper: {
+    alignItems: 'flex-start',
   },
   messageRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    maxWidth: '90%',
-  },
-  miniAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FFEAD1',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-    marginBottom: 5,
-  },
-  miniAvatarText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#FF9500',
+    maxWidth: '85%',
   },
   bubble: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 2,
-    elevation: 1,
-    maxWidth: 295
   },
   otherBubble: {
-    backgroundColor: '#FFEAD1', // Tan/Orange from screenshot
-    borderTopLeftRadius: 18,
-    borderBottomLeftRadius: 5,
+    backgroundColor: '#FFEAD1',
+    borderBottomLeftRadius: 4,
   },
   meBubble: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 18,
-    borderBottomLeftRadius: 18,
-    borderTopRightRadius: 18,
-    borderBottomRightRadius: 5,
+    backgroundColor: '#FF9500',
+    borderBottomRightRadius: 4,
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  meMessageText: {
+    color: '#fff',
+  },
+  otherMessageText: {
     color: '#1A1A1A',
   },
   messageFooter: {
@@ -301,6 +422,11 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 11,
+  },
+  meTimeText: {
+    color: 'rgba(255,255,255,0.7)',
+  },
+  otherTimeText: {
     color: '#888',
   },
   statusIcon: {
@@ -342,9 +468,14 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: '#E4E6EB', // Grey as in screenshot
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 12,
+  },
+  sendBtnActive: {
+    backgroundColor: '#FF9500',
+  },
+  sendBtnDisabled: {
+    backgroundColor: '#E4E6EB',
   },
 });

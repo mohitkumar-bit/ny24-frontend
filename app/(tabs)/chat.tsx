@@ -1,85 +1,65 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, StatusBar } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  FlatList, 
+  TouchableOpacity, 
+  SafeAreaView, 
+  StatusBar,
+  RefreshControl,
+  ActivityIndicator
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { getConversations } from '../../services/chat.service';
+import { useFocusEffect } from '@react-navigation/native';
 
 interface Chat {
-  id: string;
-  name: string;
-  lastMessage: string;
-  time: string;
+  _id: string;
+  otherUser: {
+    _id: string;
+    name: string;
+  };
+  lastMessage?: {
+    text: string;
+    createdAt: string;
+  };
   unreadCount?: number;
-  isOnline?: boolean;
-  avatarLetter: string;
 }
-
-const MOCK_CHATS: Chat[] = [
-  {
-    id: '1',
-    name: 'Ravi Kumar',
-    lastMessage: 'Yes, I am available tomorrow morni...',
-    time: '11:26',
-    unreadCount: 2,
-    isOnline: true,
-    avatarLetter: 'R',
-  },
-  {
-    id: '2',
-    name: 'Priya Singh',
-    lastMessage: 'Can you deliver by Saturday?',
-    time: '10:31',
-    avatarLetter: 'P',
-  },
-  {
-    id: '3',
-    name: 'Amit Yadav',
-    lastMessage: 'What is the total fare to Ranchi?',
-    time: '08:31',
-    unreadCount: 1,
-    isOnline: true,
-    avatarLetter: 'A',
-  },
-  {
-    id: '4',
-    name: 'Sunita Devi',
-    lastMessage: 'Thank you! Will come for measurement.',
-    time: 'Yesterday',
-    avatarLetter: 'S',
-  },
-];
 
 const ChatItem = ({ chat }: { chat: Chat }) => {
   const router = useRouter();
+  const avatarLetter = chat.otherUser.name.charAt(0).toUpperCase();
+
+  const getFormattedTime = (dateString?: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
   return (
     <TouchableOpacity
       style={styles.chatItem}
-      onPress={() => router.push({
-        pathname: `/chat/${chat.id}`,
-        params: {
-          name: chat.name,
-          avatarLetter: chat.avatarLetter
-        }
-      } as any)}
+      onPress={() => router.push(`/chat/${chat._id}?name=${encodeURIComponent(chat.otherUser.name)}&avatarLetter=${encodeURIComponent(avatarLetter)}&receiverId=${chat.otherUser._id}`)}
     >
       <View style={styles.avatarContainer}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{chat.avatarLetter}</Text>
+          <Text style={styles.avatarText}>{avatarLetter}</Text>
         </View>
-        {chat.isOnline && <View style={styles.onlineIndicator} />}
       </View>
 
       <View style={styles.chatInfo}>
         <View style={styles.chatHeader}>
-          <Text style={styles.userName}>{chat.name}</Text>
+          <Text style={styles.userName}>{chat.otherUser.name}</Text>
           <Text style={[styles.timeText, chat.unreadCount ? styles.activeTimeText : null]}>
-            {chat.time}
+            {getFormattedTime(chat.lastMessage?.createdAt)}
           </Text>
         </View>
 
         <View style={styles.messageRow}>
           <Text style={styles.lastMessage} numberOfLines={1}>
-            {chat.lastMessage}
+            {chat.lastMessage?.text || 'No messages yet'}
           </Text>
           {chat.unreadCount && (
             <View style={styles.unreadBadge}>
@@ -94,6 +74,32 @@ const ChatItem = ({ chat }: { chat: Chat }) => {
 
 export default function ChatScreen() {
   const router = useRouter();
+  const [conversations, setConversations] = useState<Chat[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchConvs = async () => {
+    try {
+      const data = await getConversations();
+      setConversations(data);
+    } catch (error) {
+      console.log('Error fetching conversations:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchConvs();
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchConvs();
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -110,14 +116,30 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={MOCK_CHATS}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <ChatItem chat={item} />}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading && !refreshing ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#FF9500" />
+        </View>
+      ) : (
+        <FlatList
+          data={conversations}
+          keyExtractor={(item) => item._id}
+          renderItem={({ item }) => <ChatItem chat={item} />}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#FF9500']} />
+          }
+          ListEmptyComponent={
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 100 }}>
+              <Ionicons name="chatbubbles-outline" size={80} color="#E2E8F0" />
+              <Text style={{ fontSize: 18, color: '#64748B', marginTop: 16 }}>No messages yet</Text>
+              <Text style={{ color: '#94A3B8', marginTop: 8 }}>Find a worker to start chatting</Text>
+            </View>
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }

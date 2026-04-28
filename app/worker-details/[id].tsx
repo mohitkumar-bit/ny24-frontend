@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, StatusBar, Platform, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, StatusBar, Platform, Alert, Linking, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { workerService } from '@/services/worker.service';
 import { authService } from '@/services/auth.service';
+import { checkChatLimit } from '@/services/chat.service';
 import { Skeleton } from '@/components/Skeleton';
+import { LimitModal } from '@/components/LimitModal';
 
 export default function WorkerDetailsScreen() {
   const { id } = useLocalSearchParams();
@@ -22,13 +24,11 @@ export default function WorkerDetailsScreen() {
     if (!id) return;
     setLoading(true);
     try {
-      console.log('Fetching worker with ID:', id);
       const [workerData, userData] = await Promise.all([
         workerService.getWorkerById(id as string),
         authService.getProfile().catch(() => null)
       ]);
       
-      console.log('Worker data received:', workerData);
       
       if (workerData) {
         setWorker(workerData);
@@ -52,16 +52,41 @@ export default function WorkerDetailsScreen() {
     }
   };
 
-  const handleChat = () => {
+  const [isCheckingLimit, setIsCheckingLimit] = useState(false);
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
+  const [modalPlan, setModalPlan] = useState('Free');
+
+  const handleChat = async () => {
     if (worker?.user) {
-      router.push({
-        pathname: '/chat/[id]' as any,
-        params: {
-          id: worker.user._id,
-          name: worker.user.name,
-          avatarLetter: worker.user.name[0]
-        }
-      });
+      setIsCheckingLimit(true);
+      try {
+        console.log('Checking chat limit for:', worker.user._id);
+        await checkChatLimit(worker.user._id);
+        
+        // If it didn't throw, we're allowed
+        router.push(`/chat/new?name=${encodeURIComponent(worker.user.name)}&avatarLetter=${encodeURIComponent(worker.user.name[0])}&receiverId=${worker.user._id}`);
+      } catch (error: any) {
+        console.log('Chat limit error caught:', error);
+        processLimitError(error);
+      } finally {
+        setIsCheckingLimit(false);
+      }
+    }
+  };
+
+  const processLimitError = (error: any) => {
+    console.log('Processing worker limit error:', error);
+    const isLimitReached = (error.code === 'CHAT_LIMIT_REACHED') || 
+                           (error.message?.toLowerCase().includes('limit reached')) ||
+                           (error.toString().toLowerCase().includes('limit reached'));
+
+    if (isLimitReached) {
+      setModalMessage(error.message || '');
+      setModalPlan('Free'); // You could dynamic this if sender.subscription is available
+      setShowLimitModal(true);
+    } else {
+      alert(error.message || error.toString());
     }
   };
 
@@ -87,6 +112,16 @@ export default function WorkerDetailsScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
+      <LimitModal 
+        visible={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        onUpgrade={() => {
+          setShowLimitModal(false);
+          router.push('/subscription');
+        }}
+        message={modalMessage}
+        plan={modalPlan}
+      />
       <LinearGradient
         colors={['#FF9500', '#FFFFFF', '#FFFFFF']}
         locations={[0, 0.3, 1]}
@@ -265,9 +300,19 @@ export default function WorkerDetailsScreen() {
             <Ionicons name="call" size={20} color="#FF9500" />
             <Text style={styles.callBtnText}>Call Now</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.chatBtn} onPress={handleChat}>
-            <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
-            <Text style={styles.chatBtnText}>Chat</Text>
+          <TouchableOpacity 
+            style={styles.chatBtn} 
+            onPress={handleChat}
+            disabled={isCheckingLimit}
+          >
+            {isCheckingLimit ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
+                <Text style={styles.chatBtnText}>Chat</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </SafeAreaView>
